@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import os
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
@@ -60,6 +60,12 @@ class RateInput(Strict):
     valid_to: str | None = None
     rate_yuan_per_kg: str
     expected_version: int | None = None
+
+
+class PublicReleaseInput(Strict):
+    name: str
+    month: str
+    expected_fingerprint: str
 
 
 class SourceDisableInput(Strict):
@@ -201,6 +207,61 @@ def create_app(db_path: str | Path | None = None):
     @app.get("/releases/{release_id}/lineage/{street_id}/{material_id}")
     def release_lineage(release_id: int, street_id: str, material_id: str):
         return service.lineage.release_row(release_id, street_id, material_id)
+
+    # ------------------------------------------------------------------
+    # 公开披露控制层：只暴露冻结的公开聚合与抑制原因，不暴露 fact_id
+    # ------------------------------------------------------------------
+    @app.get("/public/months/{month}/preview")
+    def public_preview(month: str):
+        preview = service.public_preview(month)
+        # 预览对外同样剥离内部台账编排动作
+        return service.public_releases._public_payload(preview)
+
+    @app.post("/public/releases")
+    def publish_public(body: PublicReleaseInput):
+        return service.publish_public(body.name, body.month, body.expected_fingerprint)
+
+    @app.get("/public/releases")
+    def public_releases(month: str):
+        return service.public_releases.listing(month)
+
+    @app.get("/public/releases/{release_id}")
+    def get_public_release(release_id: int):
+        return service.public_releases.get(release_id)
+
+    @app.get("/public/releases/{release_id}/communities/{community_id}")
+    def public_community(release_id: int, community_id: str):
+        return service.public_releases.public_community(release_id, community_id)
+
+    @app.get("/public/releases/{release_id}/streets/{street_id}")
+    def public_street(release_id: int, street_id: str):
+        return service.public_releases.public_street(release_id, street_id)
+
+    @app.get("/public/releases/{release_id}/region")
+    def public_region(release_id: int):
+        return service.public_releases.public_region(release_id)
+
+    @app.get("/public/releases/{release_id}/materials/{material_id}")
+    def public_material_slice(release_id: int, material_id: str):
+        return service.public_releases.public_material_slice(release_id, material_id)
+
+    # ------------------------------------------------------------------
+    # 内部审核：需审计角色令牌，可从受保护单元格追溯原始事实
+    # ------------------------------------------------------------------
+    @app.get("/audit/public/months/{month}/protected-cells")
+    def protected_cells(month: str, x_auditor_token: str | None = Header(default=None)):
+        return service.disclosure_audit.protected_cells(month, x_auditor_token)
+
+    @app.get("/audit/public/suppression-ledger")
+    def suppression_ledger(month: str | None = None,
+                           x_auditor_token: str | None = Header(default=None)):
+        return service.disclosure_audit.ledger(x_auditor_token, month)
+
+    @app.get("/audit/public/months/{month}/cells/{community_id}/{material_id}/lineage")
+    def protected_cell_lineage(month: str, community_id: str, material_id: str,
+                               x_auditor_token: str | None = Header(default=None)):
+        return service.disclosure_audit.cell_lineage(
+            month, community_id, material_id, x_auditor_token)
 
     @app.get("/audits")
     def audits(since: int = 0, limit: int = 100):

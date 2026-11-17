@@ -39,6 +39,17 @@ def parser():
     release.add_argument("fingerprint")
     inspect = sub.add_parser("inspect")
     inspect.add_argument("release_id", type=int)
+    public_preview = sub.add_parser("public-preview")
+    public_preview.add_argument("month")
+    public_release = sub.add_parser("public-release")
+    public_release.add_argument("name")
+    public_release.add_argument("month")
+    public_release.add_argument("fingerprint")
+    public_inspect = sub.add_parser("public-inspect")
+    public_inspect.add_argument("release_id", type=int)
+    protected = sub.add_parser("protected-cells")
+    protected.add_argument("month")
+    protected.add_argument("auditor_token")
     return p
 
 
@@ -66,6 +77,14 @@ def execute(service: LakeService, args):
         return service.publish(args.name, args.month, args.fingerprint)
     if args.command == "inspect":
         return service.releases.get(args.release_id)
+    if args.command == "public-preview":
+        return service.public_releases._public_payload(service.public_preview(args.month))
+    if args.command == "public-release":
+        return service.publish_public(args.name, args.month, args.fingerprint)
+    if args.command == "public-inspect":
+        return service.public_releases.get(args.release_id)
+    if args.command == "protected-cells":
+        return service.disclosure_audit.protected_cells(args.month, args.auditor_token)
     raise LakeError("unknown_command", "unsupported command")
 
 

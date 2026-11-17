@@ -6,6 +6,7 @@ from .landing import Landing
 from .ledger import Ledger
 from .lineage import Lineage
 from .mart import Mart
+from .privacy import DisclosureAudit, PrivacyPolicy, PublicRelease, PublicView
 from .quality import Quality
 from .reconcile import Reconciliation
 from .release import Release
@@ -17,7 +18,7 @@ from .snapshot import SnapshotAudit
 
 
 class LakeService:
-    def __init__(self, database_path):
+    def __init__(self, database_path, privacy_policy: PrivacyPolicy | None = None):
         self.store = Store(database_path)
         self.dimensions = Dimensions(self.store)
         self.landing = Landing(self.store, self.dimensions)
@@ -34,6 +35,9 @@ class LakeService:
         self.lineage = Lineage(self.store, self.ledger, self.reconciliation,
                                self.mart, self.releases)
         self.batches = BatchImport(self.ledger)
+        self.public_view = PublicView(self.store, self.reconciliation, privacy_policy)
+        self.public_releases = PublicRelease(self.store, self.public_view)
+        self.disclosure_audit = DisclosureAudit(self.store, self.public_view)
 
     def register_source(self, source, channel, expected_version=None):
         return self.dimensions.register_source(source, channel, expected_version)
@@ -61,3 +65,9 @@ class LakeService:
 
     def publish(self, name, month, fingerprint):
         return self.releases.publish(name, month, fingerprint)
+
+    def public_preview(self, month):
+        return self.public_releases.preview(month)
+
+    def publish_public(self, name, month, fingerprint):
+        return self.public_releases.publish(name, month, fingerprint)

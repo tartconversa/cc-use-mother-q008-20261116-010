@@ -54,6 +54,18 @@ CREATE TABLE IF NOT EXISTS rate_cards (
  UNIQUE(material_id,channel,version)
 );
 CREATE INDEX IF NOT EXISTS ix_rate_period ON rate_cards(material_id,channel,valid_from,valid_to);
+CREATE TABLE IF NOT EXISTS suppression_ledger (
+ id INTEGER PRIMARY KEY, month TEXT NOT NULL, community_id TEXT NOT NULL,
+ material_id TEXT NOT NULL, reason TEXT NOT NULL, first_release_id INTEGER,
+ first_seen_at TEXT NOT NULL, rule_fingerprint TEXT NOT NULL,
+ UNIQUE(month,community_id,material_id)
+);
+CREATE INDEX IF NOT EXISTS ix_suppress_month ON suppression_ledger(month,community_id,material_id);
+CREATE TABLE IF NOT EXISTS public_releases (
+ id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, project_month TEXT NOT NULL,
+ fingerprint TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_public_release_month ON public_releases(project_month,id);
 """
 
 
@@ -152,6 +164,27 @@ class Store:
             raise LakeError("unknown_release", "release not found", 404)
         row["content"] = json.loads(row["content"])
         return row
+
+    def public_release(self, identifier: int | str):
+        if isinstance(identifier, int):
+            clause, arg = "id=?", identifier
+        else:
+            clause, arg = "name=?", identifier
+        with self.connect() as conn:
+            row = self.one(conn, "SELECT * FROM public_releases WHERE " + clause, (arg,))
+        if row is None:
+            raise LakeError("unknown_public_release", "public release not found", 404)
+        row["content"] = json.loads(row["content"])
+        return row
+
+    def suppression_entries(self, month: str | None = None):
+        with self.connect() as conn:
+            if month is None:
+                rows = self.all(conn, "SELECT * FROM suppression_ledger ORDER BY month,community_id,material_id")
+            else:
+                rows = self.all(conn, "SELECT * FROM suppression_ledger WHERE month=? ORDER BY community_id,material_id",
+                                (month,))
+        return rows
 
     def audits(self, since: int = 0, limit: int = 100):
         if type(since) is not int or since < 0 or type(limit) is not int or not 1 <= limit <= 500:
